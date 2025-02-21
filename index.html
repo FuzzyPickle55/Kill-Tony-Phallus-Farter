@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kill Tony Phallus Farter</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #000;
+            overflow: hidden;
+        }
+        #gameCanvas {
+            border: 1px solid #fff;
+            width: 100%;
+            max-width: 800px;
+            height: auto;
+            aspect-ratio: 4 / 3;
+        }
+        .touch-control {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            display: none;
+        }
+        #joystickLeft {
+            width: 100px;
+            height: 100px;
+            bottom: 20px;
+            left: 20px;
+        }
+        #shootButton {
+            width: 80px;
+            height: 80px;
+            bottom: 20px;
+            right: 20px;
+        }
+        #joystickKnob {
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <audio id="fartSound" src="fart.wav" preload="auto" style="display: none;"></audio>
+    <div id="joystickLeft" class="touch-control"></div>
+    <div id="joystickKnob" class="touch-control"></div>
+    <div id="shootButton" class="touch-control"></div>
+    <script>
+        // Get canvas and context
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Load images with error handling
+        const tonyImg = new Image();
+        tonyImg.src = 'tony.png';
+        tonyImg.onerror = () => console.error('Failed to load tony.png');
+
+        const dildoImg = new Image();
+        dildoImg.src = 'dildo.png';
+        dildoImg.onerror = () => console.error('Failed to load dildo.png');
+
+        const ufoImg = new Image();
+        ufoImg.src = 'ufo.png';
+        ufoImg.onerror = () => console.error('Failed to load ufo.png');
+
+        const roganImg = new Image();
+        roganImg.src = 'rogan.png';
+        roganImg.onerror = () => console.error('Failed to load rogan.png');
+
+        // Load sound with error handling
+        const fartSound = document.getElementById('fartSound');
+        fartSound.onerror = () => console.error('Failed to load fart.wav');
+
+        // Tony (player) object
+        const tony = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            width: 100,  // 2x larger
+            height: 100,
+            angle: 0,
+            speed: 0,
+            maxSpeed: 5,
+            rotationSpeed: 0.05,
+        };
+
+        // Game state
+        let keys = {};
+        let bullets = [];
+        let ufos = [];
+        let rogans = [];
+        let score = 0;
+        let highScore = localStorage.getItem('highScore') ? parseInt(localStorage.getItem('highScore')) : 0;
+
+        // Touch controls
+        const joystickLeft = document.getElementById('joystickLeft');
+        const joystickKnob = document.getElementById('joystickKnob');
+        const shootButton = document.getElementById('shootButton');
+        let joystickActive = false;
+        let shootActive = false;
+        let joystickX = 0, joystickY = 0;
+
+        // Handle keyboard input
+        window.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            if (e.code === 'Space' && !keys['spacePressed']) {
+                e.preventDefault(); // Prevent space from scrolling
+                shootDildo();
+                keys['spacePressed'] = true;
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            keys[e.code] = false;
+            if (e.code === 'Space') keys['spacePressed'] = false;
+        });
+
+        // UFO object
+        function createUfo() {
+            const baseSize = 50;
+            const sizeVariation = Math.random() * 20 - 10;
+            return {
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: baseSize + sizeVariation,
+                vx: (Math.random() - 0.5) * 4,
+                vy: (Math.random() - 0.5) * 4,
+            };
+        }
+
+        // Rogan object
+        function createRogan() {
+            const baseSize = 100;
+            return {
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: baseSize,
+                vx: (Math.random() - 0.5) * 3,
+                vy: (Math.random() - 0.5) * 3,
+                hits: 3,
+            };
+        }
+
+        // Spawn initial enemies
+        for (let i = 0; i < 5; i++) {
+            ufos.push(createUfo());
+        }
+        rogans.push(createRogan());
+
+        // Main game loop
+        function update() {
+            // Clear canvas
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Handle Tony movement (keyboard or touch)
+            if (keys['ArrowLeft']) tony.angle -= tony.rotationSpeed;
+            if (keys['ArrowRight']) tony.angle += tony.rotationSpeed;
+            if (keys['ArrowUp']) {
+                tony.speed = Math.min(tony.speed + 0.1, tony.maxSpeed);
+            } else if (!joystickActive) {
+                tony.speed *= 0.98; // Slow down when not thrusting
+            }
+
+            if (joystickActive) {
+                const dx = joystickX - (joystickLeft.offsetLeft + 50);
+                const dy = joystickY - (joystickLeft.offsetTop + 50);
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance > 10) {
+                    tony.angle += dx * tony.rotationSpeed / 50;
+                    if (dy < -10) {
+                        tony.speed = Math.min(tony.speed + 0.1, tony.maxSpeed);
+                    }
+                }
+            }
+
+            // Handle shooting (single shot per trigger)
+            if (shootActive) {
+                shootDildo();
+                shootActive = false; // Reset for touch
+            }
+
+            // Update Tony position
+            tony.x += Math.cos(tony.angle) * tony.speed;
+            tony.y += Math.sin(tony.angle) * tony.speed;
+
+            // Wrap around screen edges
+            if (tony.x < 0) tony.x = canvas.width;
+            if (tony.x > canvas.width) tony.x = 0;
+            if (tony.y < 0) tony.y = canvas.height;
+            if (tony.y > canvas.height) tony.y = 0;
+
+            // Draw Tony
+            ctx.save();
+            ctx.translate(tony.x, tony.y);
+            ctx.rotate(tony.angle + Math.PI / 2);
+            ctx.drawImage(tonyImg, -tony.width / 2, -tony.height / 2, tony.width, tony.height);
+            ctx.restore();
+
+            // Update and draw bullets (dildos)
+            bullets.forEach((bullet, index) => {
+                bullet.x += bullet.vx;
+                bullet.y += bullet.vy;
+                if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
+                    bullets.splice(index, 1);
+                } else {
+                    ctx.drawImage(dildoImg, bullet.x - 25, bullet.y - 25, 50, 50);
+                }
+            });
+
+            // Update and draw UFOs
+            ufos.forEach((ufo, index) => {
+                ufo.x += ufo.vx;
+                ufo.y += ufo.vy;
+                if (ufo.x < 0 || ufo.x > canvas.width) ufo.vx *= -1;
+                if (ufo.y < 0 || ufo.y > canvas.height) ufo.vy *= -1;
+                ctx.drawImage(ufoImg, ufo.x - ufo.size / 2, ufo.y - ufo.size / 2, ufo.size, ufo.size);
+                bullets.forEach((bullet, bIndex) => {
+                    const dx = bullet.x - ufo.x;
+                    const dy = bullet.y - ufo.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < ufo.size / 2) {
+                        ufos.splice(index, 1);
+                        bullets.splice(bIndex, 1);
+                        score += 10;
+                        ufos.push(createUfo());
+                        updateHighScore();
+                    }
+                });
+            });
+
+            // Update and draw Rogans
+            rogans.forEach((rogan, index) => {
+                rogan.x += rogan.vx;
+                rogan.y += rogan.vy;
+                if (rogan.x < 0 || rogan.x > canvas.width) rogan.vx *= -1;
+                if (rogan.y < 0 || rogan.y > canvas.height) rogan.vy *= -1;
+                ctx.drawImage(roganImg, rogan.x - rogan.size / 2, rogan.y - rogan.size / 2, rogan.size, rogan.size);
+                bullets.forEach((bullet, bIndex) => {
+                    const dx = bullet.x - rogan.x;
+                    const dy = bullet.y - rogan.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < rogan.size / 2) {
+                        rogan.hits -= 1;
+                        bullets.splice(bIndex, 1);
+                        if (rogan.hits <= 0) {
+                            rogans.splice(index, 1);
+                            score += 100;
+                            rogans.push(createRogan());
+                            updateHighScore();
+                        }
+                    }
+                });
+            });
+
+            // Draw score and high score
+            ctx.font = '20px Arial';
+            ctx.fillStyle = 'white';
+            ctx.fillText(`Score: ${score}`, 10, 30);
+            ctx.fillText(`High Score: ${highScore}`, 10, 60);
+
+            requestAnimationFrame(update);
+        }
+
+        // Shoot dildo
+        function shootDildo() {
+            const bulletSpeed = 7;
+            bullets.push({
+                x: tony.x,
+                y: tony.y,
+                vx: Math.cos(tony.angle) * bulletSpeed,
+                vy: Math.sin(tony.angle) * bulletSpeed,
+            });
+            fartSound.currentTime = 0;
+            fartSound.play();
+        }
+
+        // Update high score
+        function updateHighScore() {
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('highScore', highScore);
+            }
+        }
+
+        // Touch event handlers for mobile (only run if device supports touch)
+        if ('ontouchstart' in window) {
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const touches = e.changedTouches;
+                for (let i = 0; i < touches.length; i++) {
+                    const touchX = touches[i].clientX;
+                    const touchY = touches[i].clientY;
+                    if (touchX < window.innerWidth / 2) { // Left half for joystick
+                        joystickActive = true;
+                        joystickLeft.style.left = `${touchX - 50}px`;
+                        joystickLeft.style.top = `${touchY - 50}px`;
+                        joystickLeft.style.display = 'block';
+                        joystickKnob.style.left = `${touchX - 20}px`;
+                        joystickKnob.style.top = `${touchY - 20}px`;
+                        joystickKnob.style.display = 'block';
+                        joystickX = touchX;
+                        joystickY = touchY;
+                    } else if (!shootActive) { // Right half for shooting, single shot
+                        shootActive = true;
+                        shootButton.style.left = `${touchX - 40}px`;
+                        shootButton.style.top = `${touchY - 40}px`;
+                        shootButton.style.display = 'block';
+                    }
+                }
+            });
+
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                const touches = e.touches;
+                for (let i = 0; i < touches.length; i++) {
+                    const touchX = touches[i].clientX;
+                    const touchY = touches[i].clientY;
+                    if (joystickActive && touchX < window.innerWidth / 2) {
+                        const dx = touchX - (joystickLeft.offsetLeft + 50);
+                        const dy = touchY - (joystickLeft.offsetTop + 50);
+                        const distance = Math.min(Math.sqrt(dx * dx + dy * dy), 50);
+                        const angle = Math.atan2(dy, dx);
+                        joystickX = joystickLeft.offsetLeft + 50 + Math.cos(angle) * distance;
+                        joystickY = joystickLeft.offsetTop + 50 + Math.sin(angle) * distance;
+                        joystickKnob.style.left = `${joystickX - 20}px`;
+                        joystickKnob.style.top = `${joystickY - 20}px`;
+                    }
+                }
+            });
+
+            canvas.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                const touches = e.changedTouches;
+                for (let i = 0; i < touches.length; i++) {
+                    const touchX = touches[i].clientX;
+                    if (touchX < window.innerWidth / 2) {
+                        joystickActive = false;
+                        joystickLeft.style.display = 'none';
+                        joystickKnob.style.display = 'none';
+                    } else {
+                        shootActive = false; // Reset shooting
+                        shootButton.style.display = 'none';
+                    }
+                }
+            });
+        }
+
+        // Start game when images and sound are loaded
+        Promise.all([
+            new Promise((resolve) => {
+                tonyImg.onload = resolve;
+                tonyImg.onerror = () => console.error('Failed to load tony.png');
+            }),
+            new Promise((resolve) => {
+                dildoImg.onload = resolve;
+                dildoImg.onerror = () => console.error('Failed to load dildo.png');
+            }),
+            new Promise((resolve) => {
+                ufoImg.onload = resolve;
+                ufoImg.onerror = () => console.error('Failed to load ufo.png');
+            }),
+            new Promise((resolve) => {
+                roganImg.onload = resolve;
+                roganImg.onerror = () => console.error('Failed to load rogan.png');
+            }),
+            new Promise((resolve) => {
+                fartSound.onloadeddata = resolve;
+                fartSound.onerror = () => console.error('Failed to load fart.wav');
+            }),
+        ]).then(() => update()).catch((error) => {
+            console.error('Error loading assets:', error);
+        });
+    </script>
+</body>
+</html>
